@@ -6,6 +6,8 @@ using System.Collections.Generic;
 public class PlayerController : MonoBehaviour
 {
 
+    public static PlayerController Instance { get; private set; }
+
     // Input Action Configuration
     public InputActionAsset actions;
 
@@ -90,6 +92,9 @@ public class PlayerController : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
+        if (Instance == null) Instance = this;
+        else Destroy(this);
+
         form = "gekko";
 
         Cursor.visible = false;
