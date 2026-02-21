@@ -419,7 +419,7 @@ MonoBehaviour:
     CollisionFilter:
       serializedVersion: 2
       m_Bits: 4
-    IgnoreTag: Untagged
+    IgnoreTag: Player
     CameraRadius: 0.2
     DampingIntoCollision: 0
     DampingFromCollision: 0.5
@@ -475,7 +475,7 @@ Transform:
   m_GameObject: {fileID: 435746387}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1234.9208, y: 596.4419, z: -4}
+  m_LocalPosition: {x: 0.8, y: 2.3000002, z: -4}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -709,7 +709,7 @@ Transform:
   m_GameObject: {fileID: 802218666}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1234.9208, y: 596.4419, z: -4}
+  m_LocalPosition: {x: 0.8, y: 2.3000002, z: -4}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -939,11 +939,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 5195677468776149939, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 1234.1207
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5195677468776149939, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 595.6419
+      value: 1.5
       objectReference: {fileID: 0}
     - target: {fileID: 5195677468776149939, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
       propertyPath: m_LocalPosition.z
@@ -977,9 +977,21 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5792487040377951578, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
+      propertyPath: lerpSpeed
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5792487040377951578, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
+      propertyPath: lookSensitivity
+      value: 0.01
+      objectReference: {fileID: 0}
     - target: {fileID: 6306617410461489876, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
       propertyPath: m_Name
       value: === Player ===
+      objectReference: {fileID: 0}
+    - target: {fileID: 6306617410461489876, guid: 2805cc36032a88f4e8a363e168ff68e8, type: 3}
+      propertyPath: m_TagString
+      value: Player
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

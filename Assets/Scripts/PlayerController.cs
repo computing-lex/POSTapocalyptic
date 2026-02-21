@@ -62,17 +62,24 @@ public class PlayerController : MonoBehaviour
     private bool jumping;
     private float vertSpeed;
 
+    private float gekkoVerticalVelocity = 0f;
+
+
     // ─── Cat Settings ─────────────────────────────────────────────────────────
     [Header("Cat")]
     public float catMoveSpeed = 8f;
     public float catJumpForce = 12f;
     public float catFallDamping = 0.85f; // multiplier applied to fall velocity on land
+    private float catVerticalVelocity = 0f; 
+
 
     // ─── Bat Settings ─────────────────────────────────────────────────────────
     [Header("Bat")]
     public float batMoveSpeed = 7f;
     public float batFlySpeed = 5f;   // vertical flight speed
     private bool batIsFlying = false;
+
+    private float batVerticalVelocity = 0f;
 
     // ─────────────────────────────────────────────────────────────────────────
     #region Lifecycle
@@ -205,15 +212,17 @@ public class PlayerController : MonoBehaviour
     {
         Vector2 rawLookInput = look.ReadValue<Vector2>();
 
-        currentYaw += rawLookInput.x * lookSensitivity * Time.deltaTime;
-        currentPitch -= rawLookInput.y * lookSensitivity * Time.deltaTime;
+        float yawDelta = rawLookInput.x * lookSensitivity;
+        currentPitch -= rawLookInput.y * lookSensitivity;
 
         float pitchMin = (currentForm == Form.Bat) ? -90f : -50f;
         float pitchMax = (currentForm == Form.Bat) ? 90f : 50f;
         currentPitch = Mathf.Clamp(currentPitch, pitchMin, pitchMax);
 
         Vector3 yawAxis = (currentForm == Form.Gekko) ? myNormal : Vector3.up;
-        myTransform.rotation = Quaternion.AngleAxis(currentYaw, yawAxis);
+        Quaternion yawDeltaQ = Quaternion.AngleAxis(yawDelta, yawAxis);
+        rb.MoveRotation(rb.rotation * yawDeltaQ);
+
         cameraPivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
     }
 
@@ -263,8 +272,8 @@ public class PlayerController : MonoBehaviour
         myNormal = Vector3.Lerp(myNormal, surfaceNormal, t);
 
         Vector3 myForward = Vector3.Cross(myTransform.right, myNormal);
-        Quaternion targetRot = Quaternion.LookRotation(myForward, myNormal);
-        myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
+        //Quaternion targetRot = Quaternion.LookRotation(myForward, myNormal);
+        //myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
 
         myTransform.Translate(moveVector.x * gekkoMoveSpeed, 0, moveVector.y * gekkoMoveSpeed);
     }
@@ -278,21 +287,21 @@ public class PlayerController : MonoBehaviour
         Quaternion orgRot = myTransform.rotation;
         Vector3 dstPos = point + normal * (distGround + 0.5f);
         Vector3 myFwd = Vector3.Cross(myTransform.right, normal);
-        Quaternion dstRot = Quaternion.LookRotation(myFwd, normal);
+        //Quaternion dstRot = Quaternion.LookRotation(myFwd, normal);
 
-        StartCoroutine(JumpToWallRoutine(orgPos, orgRot, dstPos, dstRot, normal));
+        StartCoroutine(JumpToWallRoutine(orgPos, orgRot, dstPos, normal));
     }
 
     private IEnumerator JumpToWallRoutine(
         Vector3 orgPos, Quaternion orgRot,
-        Vector3 dstPos, Quaternion dstRot,
-        Vector3 normal)
+        Vector3 dstPos, 
+        Vector3 normal) //Quaternion dstRot,
     {
         for (float t = 0f; t < 1f;)
         {
             t += Time.deltaTime;
             myTransform.position = Vector3.Lerp(orgPos, dstPos, t);
-            myTransform.rotation = Quaternion.Slerp(orgRot, dstRot, t);
+            //myTransform.rotation = Quaternion.Slerp(orgRot, dstRot, t);
             yield return null;
         }
 
@@ -308,45 +317,48 @@ public class PlayerController : MonoBehaviour
 
     private void CatMove()
     {
-        // Grounded check — offset ray origin to bottom of collider
+        // Grounded check
         Vector3 rayOrigin = myTransform.position;
         float rayLength = distGround + deltaGround;
         isGrounded = Physics.Raycast(rayOrigin, Vector3.down, rayLength);
 
-        // Coyote time — counts down after leaving ground
+        // Coyote time
         if (isGrounded)
             coyoteCounter = coyoteTime;
         else
             coyoteCounter -= Time.fixedDeltaTime;
 
-        // Jump buffer — counts down after pressing jump
+        // Jump buffer
         if (jump.WasPressedThisFrame())
             jumpBufferCounter = jumpBufferTime;
         else
             jumpBufferCounter -= Time.fixedDeltaTime;
 
-        // Horizontal movement
-        Vector3 moveDir = myTransform.right * moveVector.x
-                               + myTransform.forward * moveVector.y;
-        Vector3 targetVelocity = moveDir * catMoveSpeed;
-        targetVelocity.y = rb.linearVelocity.y;
-        rb.linearVelocity = targetVelocity;
+        // Apply gravity manually
+        if (!isGrounded)
+            catVerticalVelocity -= 9.8f * Time.fixedDeltaTime;
+        else if (catVerticalVelocity < 0f)
+            catVerticalVelocity = 0f;
 
-        // Jump — consume buffer if we have ground (or coyote time)
+        // Jump
         if (jumpBufferCounter > 0f && coyoteCounter > 0f)
         {
-            rb.linearVelocity = new Vector3(rb.linearVelocity.x, catJumpForce, rb.linearVelocity.z);
+            catVerticalVelocity = catJumpForce;
             jumpBufferCounter = 0f;
             coyoteCounter = 0f;
         }
 
         // Reduced fall damage
-        if (isGrounded && rb.linearVelocity.y < -1f)
-            rb.linearVelocity = new Vector3(
-                rb.linearVelocity.x,
-                rb.linearVelocity.y * catFallDamping,
-                rb.linearVelocity.z
-            );
+        if (isGrounded && catVerticalVelocity < -1f)
+            catVerticalVelocity *= catFallDamping;
+
+        // Calculate next position and move
+        Vector3 moveDir = myTransform.right * moveVector.x
+                             + myTransform.forward * moveVector.y;
+        Vector3 displacement = (moveDir * catMoveSpeed + Vector3.up * catVerticalVelocity)
+                             * Time.fixedDeltaTime;
+
+        rb.MovePosition(rb.position + displacement);
     }
 
     #endregion
@@ -405,8 +417,8 @@ public class PlayerController : MonoBehaviour
             // Align bat to surface
             float t = lerpSpeed * Time.fixedDeltaTime;
             Vector3 batFwd = Vector3.Cross(myTransform.right, surfaceNormal);
-            Quaternion targetRot = Quaternion.LookRotation(batFwd, surfaceNormal);
-            myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
+            //Quaternion targetRot = Quaternion.LookRotation(batFwd, surfaceNormal);
+            //myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
         }
     }
 
