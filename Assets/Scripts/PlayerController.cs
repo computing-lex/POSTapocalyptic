@@ -1,312 +1,423 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections;
-using System.Collections.Generic;
+using Unity.Cinemachine;
 
 public class PlayerController : MonoBehaviour
 {
-
     public static PlayerController Instance { get; private set; }
 
-    // Input Action Configuration
-    public InputActionAsset actions;
+    // ─── Enums ────────────────────────────────────────────────────────────────
+    public enum Form { Cat, Bat, Gekko }
 
+    // ─── Input ────────────────────────────────────────────────────────────────
+    public InputActionAsset actions;
     private InputAction move;
-    private InputAction CatMode;
-    private InputAction BatMode;
-    private InputAction GekkoMode;
     private InputAction jump;
     private InputAction look;
 
-    // General
-    private string form;
+    // ─── General ──────────────────────────────────────────────────────────────
+    private Form currentForm;
     private Vector2 moveVector;
     private bool isGrounded;
 
-    // Camera (and some UI ideas)
-    //[Header("UI Reference")]
-    //public UnityEngine.UI.Image crosshair;          // assign in Inspector
-    //public Sprite crosshairIdle;       // assign in Inspector
-    //public Sprite crosshairActive;     // assign in Inspector
+    private float jumpBufferTime = 0.15f; // seconds the jump input is remembered
+    private float jumpBufferCounter = 0f;
+    private float coyoteTime = 0.12f; // seconds after walking off a ledge you can still jump
+    private float coyoteCounter = 0f;
 
-    [Header("Smoothing")]
-    float pitch = 0f;
-    public Transform cameraTransform;
-    public Camera playerCamera;
-    private float speed = 5f;
-    private float lookSensitivity = 10f;
-    public float lookSmoothing = 0.1f; // Higher = weightier/slower
+    // ─── Camera / Look ────────────────────────────────────────────────────────
+    [Header("Camera")]
+    public Transform cameraPivot; // child of player
+    private CinemachineCamera virtualCamera; // cinemachin
+
+    [Header("Look Settings")]
+    public float lookSensitivity = 10f;
+    public float lookSmoothing = 0.1f;
+    private float currentYaw;
+    private float currentPitch;
+
+    private float pitch;
     private Vector2 currentLookInput;
     private Vector2 lookInputVelocity;
 
-    // Gekko
-    private float gekkoMoveSpeed = 0.5f; // move speed
-    private float turnSpeed = 90; // turning speed (degrees/second)
-    private float lerpSpeed = 10; // smoothing speed
-    private float gravity = 10; // gravity acceleration
-
-    private float deltaGround = 0.2f; // character is grounded up to this distance
-    private float jumpSpeed = 10; // vertical jump initial speed
-    private float jumpRange = 10; // range to detect target wall
-    private Vector3 surfaceNormal; // current surface normal
-    private Vector3 myNormal; // character normal
-    private float distGround; // distance from character position to ground
-    private bool jumping = false; // flag "I'm jumping to wall"
-    private float vertSpeed = 0; // vertical jump current speed
-
+    // ─── Cached Components ────────────────────────────────────────────────────
+    private Rigidbody rb;
     private Transform myTransform;
-    public BoxCollider boxCollider; // drag BoxCollider ref in editor
+    public BoxCollider boxCollider; // assign in Inspector
 
+    // ─── Gekko Settings ───────────────────────────────────────────────────────
+    [Header("Gekko")]
+    public float gekkoMoveSpeed = 0.5f;
+    public float turnSpeed = 90f;
+    public float lerpSpeed = 10f;
+    public float gekkoGravity = 10f;
+    public float deltaGround = 0.2f;
+    public float jumpSpeed = 10f;
+    public float jumpRange = 10f;
 
-    // Cat
+    private Vector3 surfaceNormal;
+    private Vector3 myNormal;
+    private float distGround;
+    private bool jumping;
+    private float vertSpeed;
 
+    // ─── Cat Settings ─────────────────────────────────────────────────────────
+    [Header("Cat")]
+    public float catMoveSpeed = 8f;
+    public float catJumpForce = 12f;
+    public float catFallDamping = 0.85f; // multiplier applied to fall velocity on land
 
-    // Bat
+    // ─── Bat Settings ─────────────────────────────────────────────────────────
+    [Header("Bat")]
+    public float batMoveSpeed = 7f;
+    public float batFlySpeed = 5f;   // vertical flight speed
+    private bool batIsFlying = false;
 
-
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Lifecycle
 
     void Awake()
     {
-        // Find Action
-        move = actions.FindActionMap("Player").FindAction("Move");
-        jump = actions.FindActionMap("Player").FindAction("Jump");
-        look = actions.FindActionMap("Player").FindAction("Look");
-       
-        actions.FindActionMap("Player").FindAction("CatMode").performed += OnCat;
-        actions.FindActionMap("Player").FindAction("BatMode").performed += OnBat;
-        actions.FindActionMap("Player").FindAction("GekkoMode").performed += OnGekko;
+        // Singleton — must be in Awake so other scripts can access it in their Awake
+        if (Instance == null) Instance = this;
+        else { Destroy(gameObject); return; }
+
+        // Cache components
+        rb = GetComponent<Rigidbody>();
+        myTransform = transform;
+
+        // Bind input actions
+        var playerMap = actions.FindActionMap("Player");
+        move = playerMap.FindAction("Move");
+        jump = playerMap.FindAction("Jump");
+        look = playerMap.FindAction("Look");
+
+        playerMap.FindAction("CatMode").performed += OnCat;
+        playerMap.FindAction("BatMode").performed += OnBat;
+        playerMap.FindAction("GekkoMode").performed += OnGekko;
     }
 
-    // Enable InputActions
-    void OnEnable()
-    {
-        //actions.FindActionMap("gameplay").Enable();
-    }
+    void OnEnable() => actions.FindActionMap("Player").Enable();
+    void OnDisable() => actions.FindActionMap("Player").Disable();
 
-    // Disable InputActions
-    void OnDisable()
-    {
-        //actions.FindActionMap("gameplay").Disable();
-    }
-
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        if (Instance == null) Instance = this;
-        else Destroy(this);
-
-        form = "gekko";
-
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
 
+        EnterForm(Form.Gekko); // default form
 
-        //crosshair.sprite = crosshairIdle;
+        virtualCamera = FindAnyObjectByType<CinemachineCamera>();
+        virtualCamera.Follow = cameraPivot;
+        virtualCamera.LookAt = cameraPivot;
     }
 
-    void Update()
+    //void Update()
+    //{
+    //    HandleLook();
+    //}
+
+    void LateUpdate()
     {
         HandleLook();
     }
-    // Update is called once per frame
+
     void FixedUpdate()
     {
-        // our update loop polls the "move" action value each frame
         moveVector = move.ReadValue<Vector2>();
 
-        // look!!
-
-
-        switch (form)
+        switch (currentForm)
         {
-            case "cat":
-                
-                // cat methods
-                Debug.Log("CAT TIME...");
-                break;
+            case Form.Cat: CatMove(); break;
+            case Form.Bat: BatMove(); break;
+            case Form.Gekko: GekkoMove(); break;
+        }
+    }
 
-            case "bat":
-                
-                // bat stuff
-                Debug.Log("BAT TIME...");
-                
-                break;
-            case "gekko":
-                
-                // gekko stuff
-                //Debug.Log("GEKKO TIME...");
+    #endregion
 
-                myNormal = transform.up; // normal starts as character up direction
-                myTransform = transform;
-                GetComponent<Rigidbody>().freezeRotation = true; // disable physics rotation
-                // distance from transform.position to ground
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Form Transitions
+
+    private void EnterForm(Form next)
+    {
+        ExitCurrentForm();
+        currentForm = next;
+
+        switch (currentForm)
+        {
+            case Form.Gekko:
+                rb.useGravity = false;     // gekko uses its own gravity
+                rb.freezeRotation = true;
+                myNormal = myTransform.up;
                 distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
-
-                gekkoMove();    
-
                 break;
 
-            default:
-                Debug.Log("NO FORM...");
+            case Form.Cat:
+                rb.useGravity = true;
+                rb.freezeRotation = false;
+                rb.constraints = RigidbodyConstraints.FreezeRotation;
+                myNormal = Vector3.up;  // cat always walks on normal ground
+                break;
+
+            case Form.Bat:
+                rb.useGravity = false;
+                rb.freezeRotation = false;
+                rb.constraints = RigidbodyConstraints.FreezeRotation;
+                batIsFlying = false;
+                break;
+        }
+
+        Debug.Log($"Entered form: {currentForm}");
+    }
+
+    private void ExitCurrentForm()
+    {
+        // Clean up state from previous form
+        switch (currentForm)
+        {
+            case Form.Gekko:
+                if (jumping)
+                {
+                    StopAllCoroutines();
+                    rb.isKinematic = false;
+                    jumping = false;
+                }
+                rb.freezeRotation = false;
+                break;
+
+            case Form.Cat:
+                break;
+
+            case Form.Bat:
+                rb.useGravity = false;
                 break;
         }
     }
 
-    #region Look
-    private void HandleLook()
-    {
-        //if (forcedWalk) return;
-
-        Vector2 rawLookInput = look.ReadValue<Vector2>();
-
-        // Interpolate the input
-        currentLookInput = Vector2.SmoothDamp(
-            currentLookInput,
-            rawLookInput,
-            ref lookInputVelocity,
-            lookSmoothing
-        );
-
-        // Rotation (Yaw)
-        transform.Rotate(Vector3.up * currentLookInput.x * lookSensitivity * Time.deltaTime);
-
-        // Pitch (Look up/down)
-        pitch -= currentLookInput.y * lookSensitivity * Time.deltaTime;
-        pitch = Mathf.Clamp(pitch, -50f, 50f);
-        cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-    }
     #endregion
 
-    #region GEKKO Movement
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Look
 
-    /// C# translation from http://answers.unity3d.com/questions/155907/basic-movement-walking-on-walls.html
-    /// Author: UA @aldonaletto, then Ryan Ferguson
-
-    // Prequisites: create an empty GameObject, attach to it a Rigidbody w/ UseGravity unchecked
-    // To empty GO also add BoxCollider and this script. Makes this the parent of the Player
-    // Size BoxCollider to fit around Player model.
-
-    private void gekkoMove()
+    private void HandleLook()
     {
-        // apply constant weight force according to character normal:
-        GetComponent<Rigidbody>().AddForce(-gravity * GetComponent<Rigidbody>().mass * myNormal);
+        Vector2 rawLookInput = look.ReadValue<Vector2>();
 
-        // jump code - jump to wall or simple jump
-        if (jumping) return; // abort Update while jumping to a wall
+        currentYaw += rawLookInput.x * lookSensitivity * Time.deltaTime;
+        currentPitch -= rawLookInput.y * lookSensitivity * Time.deltaTime;
+
+        float pitchMin = (currentForm == Form.Bat) ? -90f : -50f;
+        float pitchMax = (currentForm == Form.Bat) ? 90f : 50f;
+        currentPitch = Mathf.Clamp(currentPitch, pitchMin, pitchMax);
+
+        Vector3 yawAxis = (currentForm == Form.Gekko) ? myNormal : Vector3.up;
+        myTransform.rotation = Quaternion.AngleAxis(currentYaw, yawAxis);
+        cameraPivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+    }
+
+    #endregion
+
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Gekko Movement
+
+    // Original wall-walking logic: http://answers.unity3d.com/questions/155907/basic-movement-walking-on-walls.html
+    // Author: UA @aldonaletto — adapted here
+
+    private void GekkoMove()
+    {
+        // Apply surface gravity
+        rb.AddForce(-gekkoGravity * rb.mass * myNormal);
+
+        if (jumping) return;
 
         Ray ray;
         RaycastHit hit;
 
-        if (jump.WasPressedThisFrame()) // EDIT LATER
-        { // jump pressed:
-
-            Debug.Log("Jump.Read.");
-
+        // Jump input
+        if (jump.WasPressedThisFrame())
+        {
             ray = new Ray(myTransform.position, myTransform.forward);
             if (Physics.Raycast(ray, out hit, jumpRange))
-            { // wall ahead?
-                JumpToWall(hit.point, hit.normal); // yes: jump to the wall
-            }
+                JumpToWall(hit.point, hit.normal);
             else if (isGrounded)
-            { // no: if grounded, jump up
-                GetComponent<Rigidbody>().linearVelocity += jumpSpeed * myNormal;
-            }
+                rb.linearVelocity += jumpSpeed * myNormal;
         }
 
-        // movement code - turn left/right with Horizontal axis:
-        //myTransform.Rotate(0, moveVector.x * turnSpeed, 0);
-        
-        // update surface normal and isGrounded:
-        ray = new Ray(myTransform.position, -myNormal); // cast ray downwards
-        
+        // Update surface normal and grounded state
+        ray = new Ray(myTransform.position, -myNormal);
         if (Physics.Raycast(ray, out hit))
-        { // use it to update myNormal and isGrounded
+        {
             isGrounded = hit.distance <= distGround + deltaGround;
             surfaceNormal = hit.normal;
         }
         else
         {
             isGrounded = false;
-            // assume usual ground normal to avoid "falling forever"
             surfaceNormal = Vector3.up;
         }
-        
-        myNormal = Vector3.Lerp(myNormal, surfaceNormal, lerpSpeed);
-        // find forward direction with new myNormal:
+
+        // Smoothly align to surface — frame-rate independent
+        float t = lerpSpeed * Time.fixedDeltaTime;
+        myNormal = Vector3.Lerp(myNormal, surfaceNormal, t);
+
         Vector3 myForward = Vector3.Cross(myTransform.right, myNormal);
-        // align character to the new myNormal while keeping the forward direction:
         Quaternion targetRot = Quaternion.LookRotation(myForward, myNormal);
-        myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, lerpSpeed);
-        // move the character forth/back with Vertical axis:
+        myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
+
         myTransform.Translate(moveVector.x * gekkoMoveSpeed, 0, moveVector.y * gekkoMoveSpeed);
     }
 
     private void JumpToWall(Vector3 point, Vector3 normal)
     {
-        // jump to wall
-        jumping = true; // signal it's jumping to wall
-        GetComponent<Rigidbody>().isKinematic = true; // disable physics while jumping
+        jumping = true;
+        rb.isKinematic = true;
+
         Vector3 orgPos = myTransform.position;
         Quaternion orgRot = myTransform.rotation;
-        Vector3 dstPos = point + normal * (distGround + 0.5f); // will jump to 0.5 above wall
-        Vector3 myForward = Vector3.Cross(myTransform.right, normal);
-        Quaternion dstRot = Quaternion.LookRotation(myForward, normal);
+        Vector3 dstPos = point + normal * (distGround + 0.5f);
+        Vector3 myFwd = Vector3.Cross(myTransform.right, normal);
+        Quaternion dstRot = Quaternion.LookRotation(myFwd, normal);
 
-        StartCoroutine(jumpTime(orgPos, orgRot, dstPos, dstRot, normal));
-        //jumptime
+        StartCoroutine(JumpToWallRoutine(orgPos, orgRot, dstPos, dstRot, normal));
     }
 
-    private IEnumerator jumpTime(Vector3 orgPos, Quaternion orgRot, Vector3 dstPos, Quaternion dstRot, Vector3 normal)
+    private IEnumerator JumpToWallRoutine(
+        Vector3 orgPos, Quaternion orgRot,
+        Vector3 dstPos, Quaternion dstRot,
+        Vector3 normal)
     {
-        for (float t = 0.0f; t < 1.0f;)
+        for (float t = 0f; t < 1f;)
         {
             t += Time.deltaTime;
             myTransform.position = Vector3.Lerp(orgPos, dstPos, t);
             myTransform.rotation = Quaternion.Slerp(orgRot, dstRot, t);
-            yield return null; // return here next frame
+            yield return null;
         }
-        myNormal = normal; // update myNormal
-        GetComponent<Rigidbody>().isKinematic = false; // enable physics
-        jumping = false; // jumping to wall finished
 
+        myNormal = normal;
+        rb.isKinematic = false;
+        jumping = false;
     }
 
     #endregion
 
-    #region CAT Movement
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Cat Movement
 
     private void CatMove()
     {
-        // haha move u fucking cat
+        // Grounded check — offset ray origin to bottom of collider
+        Vector3 rayOrigin = myTransform.position;
+        float rayLength = distGround + deltaGround;
+        isGrounded = Physics.Raycast(rayOrigin, Vector3.down, rayLength);
+
+        // Coyote time — counts down after leaving ground
+        if (isGrounded)
+            coyoteCounter = coyoteTime;
+        else
+            coyoteCounter -= Time.fixedDeltaTime;
+
+        // Jump buffer — counts down after pressing jump
+        if (jump.WasPressedThisFrame())
+            jumpBufferCounter = jumpBufferTime;
+        else
+            jumpBufferCounter -= Time.fixedDeltaTime;
+
+        // Horizontal movement
+        Vector3 moveDir = myTransform.right * moveVector.x
+                               + myTransform.forward * moveVector.y;
+        Vector3 targetVelocity = moveDir * catMoveSpeed;
+        targetVelocity.y = rb.linearVelocity.y;
+        rb.linearVelocity = targetVelocity;
+
+        // Jump — consume buffer if we have ground (or coyote time)
+        if (jumpBufferCounter > 0f && coyoteCounter > 0f)
+        {
+            rb.linearVelocity = new Vector3(rb.linearVelocity.x, catJumpForce, rb.linearVelocity.z);
+            jumpBufferCounter = 0f;
+            coyoteCounter = 0f;
+        }
+
+        // Reduced fall damage
+        if (isGrounded && rb.linearVelocity.y < -1f)
+            rb.linearVelocity = new Vector3(
+                rb.linearVelocity.x,
+                rb.linearVelocity.y * catFallDamping,
+                rb.linearVelocity.z
+            );
     }
 
     #endregion
 
-
-    #region BAT Movement
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Bat Movement
 
     private void BatMove()
     {
-        // haha move u stupid bat
+        // Horizontal movement
+        Vector3 horizontalMove = (myTransform.right * moveVector.x
+                                + myTransform.forward * moveVector.y) * batMoveSpeed;
+
+        // Vertical: jump input controls ascent while held; gravity pulls down otherwise
+        float verticalVelocity = rb.linearVelocity.y;
+        if (jump.IsPressed())
+            verticalVelocity = batFlySpeed;
+        else
+            verticalVelocity -= 9.8f * Time.fixedDeltaTime; // manual gravity
+
+        rb.linearVelocity = new Vector3(horizontalMove.x, verticalVelocity, horizontalMove.z);
+
+        // Bat can only land upside-down or on walls — orient accordingly
+        Ray ray;
+        RaycastHit hit;
+
+        // Check ceiling
+        ray = new Ray(myTransform.position, Vector3.up);
+        if (Physics.Raycast(ray, out hit, distGround + deltaGround))
+        {
+            isGrounded = true;
+            surfaceNormal = hit.normal; // points downward from ceiling
+            Debug.Log("BAT: Ceiling found");
+        }
+        // Check wall
+        else
+        {
+            ray = new Ray(myTransform.position, -myTransform.right);
+            if (Physics.Raycast(ray, out hit, distGround + deltaGround) ||
+                Physics.Raycast(new Ray(myTransform.position, myTransform.right), out hit, distGround + deltaGround))
+            {
+                isGrounded = true;
+                surfaceNormal = hit.normal;
+                Debug.Log("BAT: Wall found");
+            }
+            else
+            {
+                isGrounded = false;
+                surfaceNormal = Vector3.up; // fallback: no surface nearby
+                Debug.Log("BAT: No surface found");
+            }
+        }
+
+        if (isGrounded)
+        {
+            // Align bat to surface
+            float t = lerpSpeed * Time.fixedDeltaTime;
+            Vector3 batFwd = Vector3.Cross(myTransform.right, surfaceNormal);
+            Quaternion targetRot = Quaternion.LookRotation(batFwd, surfaceNormal);
+            myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
+        }
     }
 
     #endregion
 
-    private void OnCat(InputAction.CallbackContext context)
-    {
-        // this is the "cat" action callback method
-        Debug.Log("CAT");
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Input Callbacks
 
-    private void OnBat(InputAction.CallbackContext context)
-    {
-        // this is the "bat" action callback method
-        Debug.Log("BAT");
-    }
+    private void OnCat(InputAction.CallbackContext ctx) => EnterForm(Form.Cat);
+    private void OnBat(InputAction.CallbackContext ctx) => EnterForm(Form.Bat);
+    private void OnGekko(InputAction.CallbackContext ctx) => EnterForm(Form.Gekko);
 
-    private void OnGekko(InputAction.CallbackContext context)
-    {
-        // this is the "gekko" action callback method
-        Debug.Log("GEKKO");
-    }
+    #endregion
 }
