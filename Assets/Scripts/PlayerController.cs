@@ -266,7 +266,26 @@ public class PlayerController : MonoBehaviour
 
     }
 
-#endregion
+    #endregion
+
+    #region CAT Movement
+
+    private void CatMove()
+    {
+        // haha move u fucking cat
+    }
+
+    #endregion
+
+
+    #region BAT Movement
+
+    private void BatMove()
+    {
+        // haha move u stupid bat
+    }
+
+    #endregion
 
     private void OnCat(InputAction.CallbackContext context)
     {
