@@ -167,7 +167,7 @@ public class PlayerController : MonoBehaviour
 
         // Pitch (Look up/down)
         pitch -= currentLookInput.y * lookSensitivity * Time.deltaTime;
-        pitch = Mathf.Clamp(pitch, -70f, 70f);
+        pitch = Mathf.Clamp(pitch, -50f, 50f);
         cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
     }
     #endregion
