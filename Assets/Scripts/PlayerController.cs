@@ -13,15 +13,32 @@ public class PlayerController : MonoBehaviour
     private InputAction CatMode;
     private InputAction BatMode;
     private InputAction GekkoMode;
+    private InputAction jump;
+    private InputAction look;
 
     // General
     private string form;
     private Vector2 moveVector;
     private bool isGrounded;
 
+    // Camera (and some UI ideas)
+    //[Header("UI Reference")]
+    //public UnityEngine.UI.Image crosshair;          // assign in Inspector
+    //public Sprite crosshairIdle;       // assign in Inspector
+    //public Sprite crosshairActive;     // assign in Inspector
+
+    [Header("Smoothing")]
+    float pitch = 0f;
+    public Transform cameraTransform;
+    public Camera playerCamera;
+    private float speed = 5f;
+    private float lookSensitivity = 10f;
+    public float lookSmoothing = 0.1f; // Higher = weightier/slower
+    private Vector2 currentLookInput;
+    private Vector2 lookInputVelocity;
 
     // Gekko
-    private float moveSpeed = 6; // move speed
+    private float gekkoMoveSpeed = 0.5f; // move speed
     private float turnSpeed = 90; // turning speed (degrees/second)
     private float lerpSpeed = 10; // smoothing speed
     private float gravity = 10; // gravity acceleration
@@ -50,7 +67,8 @@ public class PlayerController : MonoBehaviour
     {
         // Find Action
         move = actions.FindActionMap("Player").FindAction("Move");
-        jump = actions.FindActionMap("Player").FindAction("Jump")
+        jump = actions.FindActionMap("Player").FindAction("Jump");
+        look = actions.FindActionMap("Player").FindAction("Look");
        
         actions.FindActionMap("Player").FindAction("CatMode").performed += OnCat;
         actions.FindActionMap("Player").FindAction("BatMode").performed += OnBat;
@@ -73,13 +91,26 @@ public class PlayerController : MonoBehaviour
     void Start()
     {
         form = "gekko";
+
+        Cursor.visible = false;
+        Cursor.lockState = CursorLockMode.Locked;
+
+
+        //crosshair.sprite = crosshairIdle;
     }
 
+    void Update()
+    {
+        HandleLook();
+    }
     // Update is called once per frame
     void FixedUpdate()
     {
         // our update loop polls the "move" action value each frame
-        moveVector = moveAction.ReadValue<Vector2>();
+        moveVector = move.ReadValue<Vector2>();
+
+        // look!!
+
 
         switch (form)
         {
@@ -98,7 +129,7 @@ public class PlayerController : MonoBehaviour
             case "gekko":
                 
                 // gekko stuff
-                Debug.Log("GEKKO TIME...");
+                //Debug.Log("GEKKO TIME...");
 
                 myNormal = transform.up; // normal starts as character up direction
                 myTransform = transform;
@@ -115,6 +146,31 @@ public class PlayerController : MonoBehaviour
                 break;
         }
     }
+
+    #region Look
+    private void HandleLook()
+    {
+        //if (forcedWalk) return;
+
+        Vector2 rawLookInput = look.ReadValue<Vector2>();
+
+        // Interpolate the input
+        currentLookInput = Vector2.SmoothDamp(
+            currentLookInput,
+            rawLookInput,
+            ref lookInputVelocity,
+            lookSmoothing
+        );
+
+        // Rotation (Yaw)
+        transform.Rotate(Vector3.up * currentLookInput.x * lookSensitivity * Time.deltaTime);
+
+        // Pitch (Look up/down)
+        pitch -= currentLookInput.y * lookSensitivity * Time.deltaTime;
+        pitch = Mathf.Clamp(pitch, -70f, 70f);
+        cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+    }
+    #endregion
 
     #region GEKKO Movement
 
@@ -136,7 +192,7 @@ public class PlayerController : MonoBehaviour
         Ray ray;
         RaycastHit hit;
 
-        if (Input.GetButtonDown("Jump")) // EDIT LATER
+        if (jump.WasPressedThisFrame()) // EDIT LATER
         { // jump pressed:
 
             Debug.Log("Jump.Read.");
@@ -153,7 +209,7 @@ public class PlayerController : MonoBehaviour
         }
 
         // movement code - turn left/right with Horizontal axis:
-        myTransform.Rotate(0, Input.GetAxis("Horizontal") * turnSpeed * Time.deltaTime, 0);
+        //myTransform.Rotate(0, moveVector.x * turnSpeed, 0);
         
         // update surface normal and isGrounded:
         ray = new Ray(myTransform.position, -myNormal); // cast ray downwards
@@ -170,14 +226,14 @@ public class PlayerController : MonoBehaviour
             surfaceNormal = Vector3.up;
         }
         
-        myNormal = Vector3.Lerp(myNormal, surfaceNormal, lerpSpeed * Time.deltaTime);
+        myNormal = Vector3.Lerp(myNormal, surfaceNormal, lerpSpeed);
         // find forward direction with new myNormal:
         Vector3 myForward = Vector3.Cross(myTransform.right, myNormal);
         // align character to the new myNormal while keeping the forward direction:
         Quaternion targetRot = Quaternion.LookRotation(myForward, myNormal);
-        myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, lerpSpeed * Time.deltaTime);
+        myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, lerpSpeed);
         // move the character forth/back with Vertical axis:
-        myTransform.Translate(0, 0, Input.GetAxis("Vertical") * moveSpeed * Time.deltaTime);
+        myTransform.Translate(moveVector.x * gekkoMoveSpeed, 0, moveVector.y * gekkoMoveSpeed);
     }
 
     private void JumpToWall(Vector3 point, Vector3 normal)
