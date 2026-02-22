@@ -67,8 +67,10 @@ namespace Oceana {
         }
 
         private void SaveMesh(Mesh mesh) {
+            #if UNITY_EDITOR
             AssetDatabase.CreateAsset(mesh, "Assets/" + m_SavePath + ".asset");
             AssetDatabase.SaveAssets();
+            #endif
         }
     }
 }

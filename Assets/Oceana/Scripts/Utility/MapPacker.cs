@@ -52,6 +52,8 @@ public class MapPacker : ScriptableObject {
 
         string path = m_Path + ".png";
         System.IO.File.WriteAllBytes(path, bytes);
+        #if UNITY_EDITOR
         AssetDatabase.ImportAsset(path);
+        #endif
     }
 }

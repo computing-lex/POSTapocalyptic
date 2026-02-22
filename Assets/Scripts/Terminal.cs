@@ -12,7 +12,7 @@ public class Terminal : MonoBehaviour
     [SerializeField] private float minFontSize = 12;
     [SerializeField] private float maxFontSize = 200;
     [SerializeField] private TMP_Text prompt;
-    [SerializeField] private float timeToDeliver;
+    public float timeToDeliver;
 
     private float playerDistance = 100;
     public bool isActive = false;

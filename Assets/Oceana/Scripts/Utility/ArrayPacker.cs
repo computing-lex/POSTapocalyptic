@@ -20,8 +20,10 @@ public class ArrayPacker : ScriptableObject {
             CopyToArrayMip(m_Maps[i], array, i);
         }
 
+        #if UNITY_EDITOR
         AssetDatabase.CreateAsset(array, "Assets/" + m_Path + ".asset");
         AssetDatabase.SaveAssets();
+        #endif
     }
 
     private void CopyToArrayMip(Texture2D texture, Texture2DArray array, int index) {

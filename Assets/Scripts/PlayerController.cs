@@ -719,4 +719,13 @@ public class PlayerController : MonoBehaviour
 
     #endregion
     // ─────────────────────────────────────────────────────────────────────────
+    #region Get/Set
+
+    public void SetSensitivity(float sensitivity)
+    {
+        lookSensitivity = sensitivity;
+    }
+
+    #endregion
+    // ─────────────────────────────────────────────────────────────────────────
 }
