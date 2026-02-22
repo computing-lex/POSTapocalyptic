@@ -12,6 +12,7 @@ public class Terminal : MonoBehaviour
     [SerializeField] private float minFontSize = 12;
     [SerializeField] private float maxFontSize = 200;
     [SerializeField] private TMP_Text prompt;
+    private AudioSource audio;
     public float timeToDeliver;
 
     private float playerDistance = 100;
@@ -21,6 +22,7 @@ public class Terminal : MonoBehaviour
     void Start()
     {
         interact = InputSystem.actions.FindAction("Interact");
+        audio = GetComponent<AudioSource>();
     }
 
     void Update()
@@ -30,6 +32,7 @@ public class Terminal : MonoBehaviour
         if (interact.IsPressed() && playerDistance < interactDistance && isActive)
         {
             GameManager.Instance.OnDelivery();
+            audio.Play();
             Debug.Log("Deposited!");
         }
 
