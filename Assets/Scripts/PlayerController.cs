@@ -5,10 +5,13 @@ using Unity.Cinemachine;
 
 public class PlayerController : MonoBehaviour
 {
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Variables
+
     public static PlayerController Instance { get; private set; }
 
     // ─── Enums ────────────────────────────────────────────────────────────────
-    public enum Form { Cat, Bat, Gekko }
+    public enum Form { Cat, Bat, Gekko, Rat }
 
     // ─── Input ────────────────────────────────────────────────────────────────
     public InputActionAsset actions;
@@ -20,6 +23,7 @@ public class PlayerController : MonoBehaviour
     private Form currentForm;
     private Vector2 moveVector;
     private bool isGrounded;
+    private bool jumpPressedThisUpdate = false;
 
     private float jumpBufferTime = 0.15f; // seconds the jump input is remembered
     private float jumpBufferCounter = 0f;
@@ -46,8 +50,9 @@ public class PlayerController : MonoBehaviour
     private Transform myTransform;
     public BoxCollider boxCollider; // assign in Inspector
 
-    // ─── Gekko Settings ───────────────────────────────────────────────────────
+     //─── Gekko Settings ───────────────────────────────────────────────────────
     [Header("Gekko")]
+    public Transform gekkoMesh;
     public float gekkoMoveSpeed = 0.5f;
     public float turnSpeed = 90f;
     public float lerpSpeed = 10f;
@@ -63,6 +68,13 @@ public class PlayerController : MonoBehaviour
     private float vertSpeed;
 
     private float gekkoVerticalVelocity = 0f;
+
+    // ─── Rat Settings ─────────────────────────────────────────────────────────
+    [Header("Rat")]
+    public float ratMoveSpeed = 4f;
+    public float ratJumpForce = 5f;      // shorter jump than cat
+    public float ratCapsuleRadius = 0.2f;  // smaller collider radius for squeezing
+    private float ratVerticalVelocity = 0f;
 
 
     // ─── Cat Settings ─────────────────────────────────────────────────────────
@@ -80,6 +92,8 @@ public class PlayerController : MonoBehaviour
     private bool batIsFlying = false;
 
     private float batVerticalVelocity = 0f;
+
+    #endregion
 
     // ─────────────────────────────────────────────────────────────────────────
     #region Lifecycle
@@ -113,17 +127,18 @@ public class PlayerController : MonoBehaviour
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
 
-        EnterForm(Form.Gekko); // default form
+        EnterForm(Form.Rat); // default form
 
         virtualCamera = FindAnyObjectByType<CinemachineCamera>();
         virtualCamera.Follow = cameraPivot;
         virtualCamera.LookAt = cameraPivot;
     }
 
-    //void Update()
-    //{
-    //    HandleLook();
-    //}
+    void Update()
+    {
+        if (jump.WasPressedThisFrame())
+            jumpPressedThisUpdate = true;
+    }
 
     void LateUpdate()
     {
@@ -138,7 +153,8 @@ public class PlayerController : MonoBehaviour
         {
             case Form.Cat: CatMove(); break;
             case Form.Bat: BatMove(); break;
-            case Form.Gekko: GekkoMove(); break;
+            case Form.Rat: RatMove(); break;
+            case Form.Gekko: RatMove(); break;
         }
     }
 
@@ -151,37 +167,41 @@ public class PlayerController : MonoBehaviour
     {
         ExitCurrentForm();
         currentForm = next;
-
         switch (currentForm)
         {
             case Form.Gekko:
-                rb.useGravity = false;     // gekko uses its own gravity
+                rb.useGravity = false;
                 rb.freezeRotation = true;
                 myNormal = myTransform.up;
                 distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
                 break;
-
             case Form.Cat:
-                rb.useGravity = true;
+                rb.useGravity = false;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
-                myNormal = Vector3.up;  // cat always walks on normal ground
+                myNormal = Vector3.up;
                 break;
-
             case Form.Bat:
                 rb.useGravity = false;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
                 batIsFlying = false;
                 break;
+            case Form.Rat:
+                rb.useGravity = false;
+                rb.freezeRotation = false;
+                rb.constraints = RigidbodyConstraints.FreezeRotation;
+                myNormal = Vector3.up;
+                //boxCollider.size = new Vector3(0.4f, 0.4f, 0.4f);
+                distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
+                ratVerticalVelocity = 0f;
+                break;
         }
-
         Debug.Log($"Entered form: {currentForm}");
     }
 
     private void ExitCurrentForm()
     {
-        // Clean up state from previous form
         switch (currentForm)
         {
             case Form.Gekko:
@@ -193,12 +213,14 @@ public class PlayerController : MonoBehaviour
                 }
                 rb.freezeRotation = false;
                 break;
-
             case Form.Cat:
                 break;
-
             case Form.Bat:
                 rb.useGravity = false;
+                break;
+            case Form.Rat:
+                // Restore collider to default size when leaving rat form
+                boxCollider.size = new Vector3(1f, 1f, 1f); // match your default collider size
                 break;
         }
     }
@@ -231,28 +253,10 @@ public class PlayerController : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     #region Gekko Movement
 
-    // Original wall-walking logic: http://answers.unity3d.com/questions/155907/basic-movement-walking-on-walls.html
-    // Author: UA @aldonaletto — adapted here
-
     private void GekkoMove()
     {
-        // Apply surface gravity
-        rb.AddForce(-gekkoGravity * rb.mass * myNormal);
-
-        if (jumping) return;
-
         Ray ray;
         RaycastHit hit;
-
-        // Jump input
-        if (jump.WasPressedThisFrame())
-        {
-            ray = new Ray(myTransform.position, myTransform.forward);
-            if (Physics.Raycast(ray, out hit, jumpRange))
-                JumpToWall(hit.point, hit.normal);
-            else if (isGrounded)
-                rb.linearVelocity += jumpSpeed * myNormal;
-        }
 
         // Update surface normal and grounded state
         ray = new Ray(myTransform.position, -myNormal);
@@ -267,47 +271,150 @@ public class PlayerController : MonoBehaviour
             surfaceNormal = Vector3.up;
         }
 
-        // Smoothly align to surface — frame-rate independent
-        float t = lerpSpeed * Time.fixedDeltaTime;
-        myNormal = Vector3.Lerp(myNormal, surfaceNormal, t);
+        Vector3 surfaceRight = Vector3.Cross(myNormal, myTransform.forward).normalized;
+        Vector3 surfaceForward = Vector3.Cross(surfaceRight, myNormal).normalized;
+        Vector3 moveDir = surfaceRight * moveVector.x
+                               + surfaceForward * moveVector.y;
 
-        Vector3 myForward = Vector3.Cross(myTransform.right, myNormal);
-        //Quaternion targetRot = Quaternion.LookRotation(myForward, myNormal);
-        //myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
-
-        myTransform.Translate(moveVector.x * gekkoMoveSpeed, 0, moveVector.y * gekkoMoveSpeed);
-    }
-
-    private void JumpToWall(Vector3 point, Vector3 normal)
-    {
-        jumping = true;
-        rb.isKinematic = true;
-
-        Vector3 orgPos = myTransform.position;
-        Quaternion orgRot = myTransform.rotation;
-        Vector3 dstPos = point + normal * (distGround + 0.5f);
-        Vector3 myFwd = Vector3.Cross(myTransform.right, normal);
-        //Quaternion dstRot = Quaternion.LookRotation(myFwd, normal);
-
-        StartCoroutine(JumpToWallRoutine(orgPos, orgRot, dstPos, normal));
-    }
-
-    private IEnumerator JumpToWallRoutine(
-        Vector3 orgPos, Quaternion orgRot,
-        Vector3 dstPos, 
-        Vector3 normal) //Quaternion dstRot,
-    {
-        for (float t = 0f; t < 1f;)
+        if (moveDir.magnitude > 0.01f)
         {
-            t += Time.deltaTime;
-            myTransform.position = Vector3.Lerp(orgPos, dstPos, t);
-            //myTransform.rotation = Quaternion.Slerp(orgRot, dstRot, t);
-            yield return null;
+            Vector3 moveDirNorm = moveDir.normalized;
+            bool foundSurface = false;
+
+            // Priority 1 — diagonal into surface (floor->wall, wall->ceiling)
+            ray = new Ray(myTransform.position, (moveDirNorm - myNormal).normalized);
+            if (Physics.Raycast(ray, out hit, distGround + 1.0f))
+            {
+                surfaceNormal = hit.normal;
+                foundSurface = true;
+            }
+
+            // Priority 2 — forward along surface (walls directly ahead)
+            if (!foundSurface)
+            {
+                ray = new Ray(myTransform.position, moveDirNorm);
+                if (Physics.Raycast(ray, out hit, distGround + 1.0f))
+                {
+                    surfaceNormal = hit.normal;
+                    foundSurface = true;
+                }
+            }
+
+            // Priority 3 — top->side, only on horizontal surfaces
+            bool onHorizontalSurface = Vector3.Angle(myNormal, Vector3.up) < 45f;
+            if (!foundSurface && onHorizontalSurface)
+            {
+                Vector3 aheadPos = myTransform.position + moveDirNorm * (distGround + 0.5f);
+                ray = new Ray(aheadPos, Vector3.down);
+                if (Physics.Raycast(ray, out hit, distGround + 1.5f))
+                {
+                    if (Vector3.Angle(hit.normal, myNormal) > 45f)
+                    {
+                        surfaceNormal = hit.normal;
+                        foundSurface = true;
+                    }
+                }
+            }
+
+            // Priority 4 — side->bottom, only on vertical surfaces moving "down" in surface space
+            bool onVerticalSurface = Vector3.Angle(myNormal, Vector3.up) >= 45f;
+            bool movingDownSurface = moveVector.y < -0.1f; // S key = moving down the surface
+            if (!foundSurface && onVerticalSurface && movingDownSurface)
+            {
+                Vector3 aheadPos = myTransform.position + moveDirNorm * (distGround + 0.5f);
+                ray = new Ray(aheadPos, Vector3.down);
+                if (Physics.Raycast(ray, out hit, distGround + 2.0f))
+                {
+                    if (Vector3.Angle(hit.normal, myNormal) > 45f)
+                    {
+                        surfaceNormal = hit.normal;
+                        foundSurface = true;
+                    }
+                }
+            }
+
+            // Priority 5 — ahead + negative normal fallback
+            if (!foundSurface)
+            {
+                Vector3 aheadPos = myTransform.position + moveDirNorm * (distGround + 0.5f);
+                ray = new Ray(aheadPos, -myNormal);
+                if (Physics.Raycast(ray, out hit, distGround + 1.5f))
+                    surfaceNormal = hit.normal;
+            }
         }
 
-        myNormal = normal;
-        rb.isKinematic = false;
-        jumping = false;
+        // Smoothly align surface normal
+        float t = lerpSpeed * Time.deltaTime;
+        myNormal = Vector3.Lerp(myNormal, surfaceNormal, t);
+
+        // Rotate only the mesh to align with surface
+        Vector3 meshForward = Vector3.Cross(myTransform.right, myNormal);
+        Quaternion meshTarget = Quaternion.LookRotation(meshForward, myNormal);
+        gekkoMesh.rotation = Quaternion.Lerp(gekkoMesh.rotation, meshTarget, t);
+
+        // Gravity when airborne
+        if (!isGrounded)
+            gekkoVerticalVelocity -= gekkoGravity * Time.deltaTime;
+        else
+            gekkoVerticalVelocity = 0f;
+
+        Vector3 displacement = moveDir * gekkoMoveSpeed * Time.deltaTime;
+        if (!isGrounded)
+            displacement += myNormal * gekkoVerticalVelocity * Time.deltaTime;
+
+        rb.MovePosition(rb.position + displacement);
+    }
+
+    #endregion
+
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Rat Movement
+
+    private void RatMove()
+    {
+        isGrounded = Physics.Raycast(myTransform.position, Vector3.down, distGround + deltaGround);
+
+        // Coyote time
+        if (isGrounded)
+            coyoteCounter = coyoteTime;
+        else
+            coyoteCounter -= Time.deltaTime;
+
+        //Jump buffer
+        if (jumpPressedThisUpdate)
+        {
+            jumpBufferCounter = jumpBufferTime;
+            jumpPressedThisUpdate = false;
+        }
+        else
+            jumpBufferCounter -= Time.deltaTime;
+
+        //Manual gravity
+        if (!isGrounded)
+            ratVerticalVelocity -= 9.8f * Time.deltaTime;
+
+        //Jump
+        if (jumpBufferCounter > 0f && coyoteCounter > 0f)
+        {
+            ratVerticalVelocity = ratJumpForce;
+            jumpBufferCounter = 0f;
+            coyoteCounter = 0f;
+        }
+
+        // Landing — fall damage then stop vertical movement
+        if (isGrounded && ratVerticalVelocity < 0f)
+        {
+            if (ratVerticalVelocity >= -1f)
+                ratVerticalVelocity = 0f;
+                
+        }
+
+        Vector3 moveDir = myTransform.right * moveVector.x
+                             + myTransform.forward * moveVector.y;
+        Vector3 displacement = (moveDir * ratMoveSpeed + Vector3.up * ratVerticalVelocity)
+                     * Time.deltaTime;
+
+        rb.MovePosition(rb.position + displacement);
     }
 
     #endregion
@@ -317,28 +424,26 @@ public class PlayerController : MonoBehaviour
 
     private void CatMove()
     {
-        // Grounded check
-        Vector3 rayOrigin = myTransform.position;
-        float rayLength = distGround + deltaGround;
-        isGrounded = Physics.Raycast(rayOrigin, Vector3.down, rayLength);
+        isGrounded = Physics.Raycast(myTransform.position, Vector3.down, distGround + deltaGround);
 
         // Coyote time
         if (isGrounded)
             coyoteCounter = coyoteTime;
         else
-            coyoteCounter -= Time.fixedDeltaTime;
+            coyoteCounter -= Time.deltaTime;
 
         // Jump buffer
-        if (jump.WasPressedThisFrame())
+        if (jumpPressedThisUpdate)
+        {
             jumpBufferCounter = jumpBufferTime;
+            jumpPressedThisUpdate = false;
+        }
         else
-            jumpBufferCounter -= Time.fixedDeltaTime;
+            jumpBufferCounter -= Time.deltaTime;
 
-        // Apply gravity manually
+        // Manual gravity
         if (!isGrounded)
-            catVerticalVelocity -= 9.8f * Time.fixedDeltaTime;
-        else if (catVerticalVelocity < 0f)
-            catVerticalVelocity = 0f;
+            catVerticalVelocity -= 9.8f * Time.deltaTime;
 
         // Jump
         if (jumpBufferCounter > 0f && coyoteCounter > 0f)
@@ -348,20 +453,25 @@ public class PlayerController : MonoBehaviour
             coyoteCounter = 0f;
         }
 
-        // Reduced fall damage
-        if (isGrounded && catVerticalVelocity < -1f)
-            catVerticalVelocity *= catFallDamping;
+        // Landing — fall damage then stop vertical movement
+        if (isGrounded && catVerticalVelocity < 0f)
+        {
+            if (catVerticalVelocity < -1f)
+                catVerticalVelocity *= catFallDamping;
+            else
+                catVerticalVelocity = 0f;
+        }
 
-        // Calculate next position and move
         Vector3 moveDir = myTransform.right * moveVector.x
                              + myTransform.forward * moveVector.y;
         Vector3 displacement = (moveDir * catMoveSpeed + Vector3.up * catVerticalVelocity)
-                             * Time.fixedDeltaTime;
+                             * Time.deltaTime;
 
         rb.MovePosition(rb.position + displacement);
     }
 
     #endregion
+
 
     // ─────────────────────────────────────────────────────────────────────────
     #region Bat Movement
@@ -429,7 +539,7 @@ public class PlayerController : MonoBehaviour
 
     private void OnCat(InputAction.CallbackContext ctx) => EnterForm(Form.Cat);
     private void OnBat(InputAction.CallbackContext ctx) => EnterForm(Form.Bat);
-    private void OnGekko(InputAction.CallbackContext ctx) => EnterForm(Form.Gekko);
+    private void OnGekko(InputAction.CallbackContext ctx) => EnterForm(Form.Rat); // got lazy, sry LOL FUCKT HE GEKCKO I HATE THAT GUYUS
 
     #endregion
 }
