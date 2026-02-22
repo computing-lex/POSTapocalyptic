@@ -23,6 +23,7 @@ public class PlayerController : MonoBehaviour
     public Sprite batCrosshair;
 
     public AudioSource transfnoise;
+    public ParticleSystem particles;
 
     // ─── Input ────────────────────────────────────────────────────────────────
     public InputActionAsset actions;
@@ -222,6 +223,7 @@ public class PlayerController : MonoBehaviour
         ExitCurrentForm();
         currentForm = next;
         transfnoise.Play(0);
+        particles.Play();
         switch (currentForm)
         {
             case Form.Gekko:
