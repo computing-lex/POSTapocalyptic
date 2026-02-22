@@ -6,8 +6,8 @@ using UnityEngine.Events;
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
-    [SerializeField] private List<Terminal> terminals;
-    [SerializeField] private int currentTerminal = 0;
+    public List<Terminal> terminals;
+    public int currentTerminal = 0;
     public float currentTimer = 0;
 
     public UnityEvent gameOver;
