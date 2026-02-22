@@ -29,6 +29,5 @@ MonoBehaviour:
   DisplaceHeight: 0.5
   ScrollST: {x: 0.2, y: 0.2, z: 0, w: 0}
   SurfaceMaterial: {fileID: 2100000, guid: cd5de16c6dae22e4db0896880b134b0c, type: 2}
-  SurfaceMesh: {fileID: -1077782958523898724, guid: 02f84aa0717537949ba0f6c3b6efe698,
-    type: 3}
+  SurfaceMesh: {fileID: -1077782958523898724, guid: 02f84aa0717537949ba0f6c3b6efe698, type: 3}
   UnderwaterMaterial: {fileID: 2100000, guid: 855380283b4169e4b9675bf0615ae18d, type: 2}
