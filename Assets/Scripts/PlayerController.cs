@@ -12,7 +12,7 @@ public class PlayerController : MonoBehaviour
     public static PlayerController Instance { get; private set; }
 
     // ─── Enums ────────────────────────────────────────────────────────────────
-    public enum Form { Cat, Bat, Gekko, Rat }
+    public enum Form { Cat, Bat, Rat }
 
     // ─── Crosshair/UI ───────────────────────────────────────────────────────────────
 
@@ -21,6 +21,8 @@ public class PlayerController : MonoBehaviour
     public Sprite catCrosshair;
     public Sprite ratCrosshair;
     public Sprite batCrosshair;
+
+    public AudioSource transfnoise;
 
     // ─── Input ────────────────────────────────────────────────────────────────
     public InputActionAsset actions;
@@ -159,7 +161,8 @@ public class PlayerController : MonoBehaviour
         playerMap.FindAction("GekkoMode").performed += OnGekko;
 
         cc = GetComponent<CharacterController>();
-        cc.enabled = false;
+        //cc.enabled = false;
+
     }
 
     void OnEnable() => actions.FindActionMap("Player").Enable();
@@ -181,6 +184,9 @@ public class PlayerController : MonoBehaviour
         virtualCamera = FindAnyObjectByType<CinemachineCamera>();
         virtualCamera.Follow = cameraPivot;
         virtualCamera.LookAt = cameraPivot;
+
+        cc.enabled = true;
+        transfnoise = GetComponent<AudioSource>();
     }
 
     void Update()
@@ -203,7 +209,7 @@ public class PlayerController : MonoBehaviour
             case Form.Cat: CatMove(); break;
             case Form.Bat: BatMove(); break;
             case Form.Rat: RatMove(); break;
-            case Form.Gekko: RatMove(); break;
+            //case Form.Gekko: RatMove(); break;
         }
     }
 
@@ -215,23 +221,24 @@ public class PlayerController : MonoBehaviour
     {
         ExitCurrentForm();
         currentForm = next;
+        transfnoise.Play(0);
         switch (currentForm)
         {
-            case Form.Gekko:
-                rb.useGravity = false;
-                rb.freezeRotation = true;
-                myNormal = myTransform.up;
-                distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
+            //case Form.Gekko:
+            //    rb.useGravity = false;
+            //    rb.freezeRotation = true;
+            //    myNormal = myTransform.up;
+            //    distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
 
-                //crosshair.sprite
-                // gameobject.setActive()
-                break;
+            //    //crosshair.sprite
+            //    // gameobject.setActive()
+            //    break;
             case Form.Cat:
                 rb.isKinematic = true;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
                 myNormal = Vector3.up;
-                cc.enabled = true;
+                //cc.enabled = true;
                 cc.radius = 0.5f;
                 cc.height = 2f;
                 catVerticalVelocity = 0f;
@@ -242,6 +249,7 @@ public class PlayerController : MonoBehaviour
                 break;
 
             case Form.Bat:
+                cc.enabled = false;
                 rb.useGravity = false;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
@@ -257,7 +265,7 @@ public class PlayerController : MonoBehaviour
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
                 myNormal = Vector3.up;
-                cc.enabled = true;
+                //cc.enabled = true;
                 cc.radius = 0.2f;  // smaller — can squeeze through gaps or something HAHAHAHAHAH
                 cc.height = 0.8f;
                 ratVerticalVelocity = 0f;
@@ -284,19 +292,19 @@ public class PlayerController : MonoBehaviour
 
         switch (currentForm)
         {
-            case Form.Gekko:
-                if (jumping)
-                {
-                    StopAllCoroutines();
-                    rb.isKinematic = false;
-                    jumping = false;
-                }
-                gekkoVerticalVelocity = 0f;
-                rb.freezeRotation = false;
-                break;
+            //case Form.Gekko:
+            //    if (jumping)
+            //    {
+            //        StopAllCoroutines();
+            //        rb.isKinematic = false;
+            //        jumping = false;
+            //    }
+            //    gekkoVerticalVelocity = 0f;
+            //    rb.freezeRotation = false;
+            //    break;
             case Form.Cat:
                 catVerticalVelocity = 0f;
-                cc.enabled = false;
+                //cc.enabled = false;
                 rb.isKinematic = false;
                 catMesh.SetActive(false);
                 break;
@@ -304,9 +312,10 @@ public class PlayerController : MonoBehaviour
                 batVerticalVelocity = 0f;
                 rb.useGravity = false;
                 batMesh.SetActive(false);
+                cc.enabled = true;
                 break;
             case Form.Rat:
-                cc.enabled = false;
+                //cc.enabled = false;
                 rb.isKinematic = false;
                 ratVerticalVelocity = 0f;
                 ratDashVelocity = Vector3.zero;
@@ -331,7 +340,7 @@ public class PlayerController : MonoBehaviour
         float pitchMax = (currentForm == Form.Bat) ? 90f : 50f;
         currentPitch = Mathf.Clamp(currentPitch, pitchMin, pitchMax);
 
-        Vector3 yawAxis = (currentForm == Form.Gekko) ? myNormal : Vector3.up;
+        Vector3 yawAxis = Vector3.up;
         Quaternion yawDeltaQ = Quaternion.AngleAxis(yawDelta, yawAxis);
 
         if (cc.enabled)
