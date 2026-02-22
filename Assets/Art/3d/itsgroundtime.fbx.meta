@@ -7,6 +7,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: TOWER
+    second: {fileID: 2100000, guid: 50c6579ff1c4700438fe92527debec70, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: VFBOHWERrial
     second: {fileID: 2100000, guid: 3c3d8b29e9d07f442a9458b1ceee5847, type: 2}
   - first:
