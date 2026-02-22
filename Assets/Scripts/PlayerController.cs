@@ -38,6 +38,8 @@ public class PlayerController : MonoBehaviour
     private float jumpBufferCounter = 0f;
     private float coyoteTime = 0.12f; // seconds after walking off a ledge you can still jump
     private float coyoteCounter = 0f;
+    private float lastAirborneVelocity = 0f;
+    private bool wasGrounded = false;
 
     // ─── Camera / Look ────────────────────────────────────────────────────────
     [Header("Camera")]
@@ -96,16 +98,19 @@ public class PlayerController : MonoBehaviour
     // ─── Rat Settings ─────────────────────────────────────────────────────────
     [Header("Rat")]
     public float ratMoveSpeed = 4f;
-    public float ratJumpForce = 5f;      // shorter jump than cat
-    public float ratCapsuleRadius = 0.2f;  // smaller collider radius for squeezing
+    public float ratJumpForce = 5f;      // shorter jump than cat on GOD
+    public float ratCapsuleRadius = 0.2f;  // smaller collider radius for squeezingc()
     private float ratVerticalVelocity = 0f;
+    public float ratFallDamping = 0.9f; // multiplier applied to fall velocity  ( bhut for rat) (haha big jumop)
+    public float ratDashSpeed = 8f;
+    private Vector3 ratDashVelocity = Vector3.zero;
 
 
     // ─── Cat Settings ─────────────────────────────────────────────────────────
     [Header("Cat")]
     public float catMoveSpeed = 8f;
     public float catJumpForce = 12f;
-    public float catFallDamping = 0.85f; // multiplier applied to fall velocity on land
+    public float catFallDamping = 0.85f; // multiplier applied to fall velocity  (haha big jumop)
     private float catVerticalVelocity = 0f; 
 
 
@@ -117,8 +122,19 @@ public class PlayerController : MonoBehaviour
 
     private float batVerticalVelocity = 0f;
 
-    #endregion
+    // ─── Health Settings ─────────────────────────────────────────────────────────
+    [Header("Health")]
+    public int maxHealth = 5;
+    public float catFallDamageThreshold = 15f; // velocity needed to take damage - WORKWORKWORKWROKSSSS YIPPEE
+    public float ratFallDamageThreshold = 7f;
+    private int currentHealth;
+    private float peakFallVelocity = 0f;  // tracks how fast we were falling
 
+    [Header("Health UI")]
+    public GameObject[] healthIcons;        // 5 of em total btw  :3
+    public string damageAnimationName = "animHeart"; // woooommmmppppp discontinued
+
+    #endregion
     // ─────────────────────────────────────────────────────────────────────────
     #region Lifecycle
 
@@ -151,6 +167,9 @@ public class PlayerController : MonoBehaviour
 
     void Start()
     {
+        maxHealth = healthIcons.Length;
+        currentHealth = maxHealth;
+
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
 
@@ -189,7 +208,6 @@ public class PlayerController : MonoBehaviour
     }
 
     #endregion
-
     // ─────────────────────────────────────────────────────────────────────────
     #region Form Transitions
 
@@ -245,6 +263,9 @@ public class PlayerController : MonoBehaviour
                 ratVerticalVelocity = 0f;
                 distGround = cc.height / 2f;
 
+                // burst forwards on transform
+                ratDashVelocity = myTransform.forward * ratDashSpeed;
+
                 // mesh & animation
                 ratMesh.SetActive(true);
                 crosshair.sprite = ratCrosshair;
@@ -288,6 +309,7 @@ public class PlayerController : MonoBehaviour
                 cc.enabled = false;
                 rb.isKinematic = false;
                 ratVerticalVelocity = 0f;
+                ratDashVelocity = Vector3.zero;
                 boxCollider.size = new Vector3(1f, 1f, 1f);
                 ratMesh.SetActive(false);
                 break;
@@ -295,7 +317,6 @@ public class PlayerController : MonoBehaviour
     }
 
     #endregion
-
     // ─────────────────────────────────────────────────────────────────────────
     #region Look
 
@@ -322,9 +343,8 @@ public class PlayerController : MonoBehaviour
     }
 
     #endregion
-
     // ─────────────────────────────────────────────────────────────────────────
-    #region Gekko Movement
+    #region Gekko Movement - LEGACY
 
     private void GekkoMove()
     {
@@ -439,7 +459,6 @@ public class PlayerController : MonoBehaviour
     }
 
     #endregion
-
     // ─────────────────────────────────────────────────────────────────────────
     #region Rat Movement
 
@@ -467,6 +486,7 @@ public class PlayerController : MonoBehaviour
         // Gravity
         if (!isGrounded)
             ratVerticalVelocity -= 9.8f * Time.deltaTime;
+        
 
         // Jump
         if (jumpBufferCounter > 0f && coyoteCounter > 0f)
@@ -480,16 +500,37 @@ public class PlayerController : MonoBehaviour
         if (isGrounded && ratVerticalVelocity < 0f)
             ratVerticalVelocity = 0f;
 
+        // Store velocity while airborne (yes ik this is redundant i needto know this works first tho) 
+        if (!isGrounded)
+            lastAirborneVelocity = ratVerticalVelocity;
+
+        // Only check on the exact frame we land (airborne -> grounded transition)
+        bool justLanded = isGrounded && !wasGrounded;
+        if (justLanded)
+        {
+            if (Mathf.Abs(lastAirborneVelocity) >= ratFallDamageThreshold)
+                TakeDamage(1);
+            lastAirborneVelocity = 0f;
+        }
+
+        // Landing — stop vertical movement
+        if (isGrounded && ratVerticalVelocity < 0f)
+            ratVerticalVelocity = 0f;
+
+        wasGrounded = isGrounded;
+
+        // Decay dash velocity over time
+        ratDashVelocity = Vector3.Lerp(ratDashVelocity, Vector3.zero, 10f * Time.deltaTime);
+
         Vector3 moveDir = myTransform.right * moveVector.x
                              + myTransform.forward * moveVector.y;
-        Vector3 displacement = (moveDir * ratMoveSpeed + Vector3.up * ratVerticalVelocity)
+        Vector3 displacement = (moveDir * ratMoveSpeed + ratDashVelocity + Vector3.up * ratVerticalVelocity)
                              * Time.deltaTime;
 
         cc.Move(displacement);
     }
 
     #endregion
-
     // ─────────────────────────────────────────────────────────────────────────
     #region Cat Movement
 
@@ -540,12 +581,29 @@ public class PlayerController : MonoBehaviour
         Vector3 displacement = (moveDir * catMoveSpeed + Vector3.up * catVerticalVelocity)
                              * Time.deltaTime;
 
+        // Store velocity while airborne
+        if (!isGrounded)
+            lastAirborneVelocity = catVerticalVelocity;
+
+        // Only check on the exact frame we land (airborne -> grounded transition) PLEWAS FUCK IGN WORK
+        bool justLanded = isGrounded && !wasGrounded;
+        if (justLanded)
+        {
+            if (Mathf.Abs(lastAirborneVelocity) >= catFallDamageThreshold)
+                TakeDamage(1);
+            lastAirborneVelocity = 0f;
+        }
+
+        // Landing — stop vertical movement
+        if (isGrounded && catVerticalVelocity < 0f)
+            catVerticalVelocity = 0f;
+
+        wasGrounded = isGrounded;
+
         cc.Move(displacement);
     }
 
     #endregion
-
-
     // ─────────────────────────────────────────────────────────────────────────
     #region Bat Movement
 
@@ -576,7 +634,7 @@ public class PlayerController : MonoBehaviour
         {
             isGrounded = true;
             surfaceNormal = hit.normal; // points downward from ceiling
-            Debug.Log("BAT: Ceiling found");
+            //Debug.Log("BAT: Ceiling found");
         }
         // Check wall
         else
@@ -587,13 +645,13 @@ public class PlayerController : MonoBehaviour
             {
                 isGrounded = true;
                 surfaceNormal = hit.normal;
-                Debug.Log("BAT: Wall found");
+                //Debug.Log("BAT: Wall found");
             }
             else
             {
                 isGrounded = false;
                 surfaceNormal = Vector3.up; // fallback: no surface nearby
-                Debug.Log("BAT: No surface found");
+                //Debug.Log("BAT: No surface found");
             }
         }
 
@@ -613,7 +671,6 @@ public class PlayerController : MonoBehaviour
     }
 
     #endregion
-
     // ─────────────────────────────────────────────────────────────────────────
     #region Input Callbacks
 
@@ -622,4 +679,44 @@ public class PlayerController : MonoBehaviour
     private void OnGekko(InputAction.CallbackContext ctx) => EnterForm(Form.Rat); // got lazy, sry LOL FUCKT HE GEKCKO I HATE THAT GUYUS
 
     #endregion
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Health
+
+    private void TakeDamage(int amount)
+    {
+        currentHealth -= amount;
+        currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
+
+        Debug.Log($"Health: {currentHealth}/{maxHealth}");
+
+        int iconIndex = currentHealth;
+        if (iconIndex >= 0 && iconIndex < healthIcons.Length)
+            StartCoroutine(DamageIconRoutine(healthIcons[iconIndex]));
+
+        if (currentHealth <= 0)
+            Debug.Log("Deadddd ahaha *sharts cutely*");
+    }
+
+    private IEnumerator DamageIconRoutine(GameObject icon)
+    {
+        Animator anim = icon.GetComponent<Animator>();
+        if (anim != null)
+        {
+            anim.SetBool("takeDamage", true);
+            // Wait for the animation to finish before deactivating?? hnvm? ? it didnt work wtvr 
+            yield return new WaitForSeconds(0.75f); //anim.GetCurrentAnimatorStateInfo(0).length - manually assigned value now so gg. go next
+        }
+        icon.SetActive(false);
+    }
+
+
+    // TS WORK OH YEA
+    [ContextMenu("Test Take Damage")]
+    private void TestTakeDamage()
+    {
+        TakeDamage(1);
+    }
+
+    #endregion
+    // ─────────────────────────────────────────────────────────────────────────
 }
