@@ -2,6 +2,7 @@
 using UnityEngine.InputSystem;
 using System.Collections;
 using Unity.Cinemachine;
+using UnityEngine.UI;
 
 public class PlayerController : MonoBehaviour
 {
@@ -12,6 +13,14 @@ public class PlayerController : MonoBehaviour
 
     // ─── Enums ────────────────────────────────────────────────────────────────
     public enum Form { Cat, Bat, Gekko, Rat }
+
+    // ─── Crosshair/UI ───────────────────────────────────────────────────────────────
+
+    public Image crosshair;
+    public Sprite intCrosshair;
+    public Sprite catCrosshair;
+    public Sprite ratCrosshair;
+    public Sprite batCrosshair;
 
     // ─── Input ────────────────────────────────────────────────────────────────
     public InputActionAsset actions;
@@ -48,9 +57,24 @@ public class PlayerController : MonoBehaviour
     // ─── Cached Components ────────────────────────────────────────────────────
     private Rigidbody rb;
     private Transform myTransform;
-    public BoxCollider boxCollider; // assign in Inspector
+    public BoxCollider boxCollider;
+    private CharacterController cc; 
 
-     //─── Gekko Settings ───────────────────────────────────────────────────────
+    // ─── Mesh / Animator Settings ───────────────────────────────────────────────────────
+    public GameObject ratMesh;
+    public GameObject catMesh;
+    public GameObject batMesh;
+
+    public RuntimeAnimatorController ratController;
+    public RuntimeAnimatorController catController;
+    public RuntimeAnimatorController batController;
+
+    public Animator ratAnimation;
+    public Animator catAnimation;
+    public Animator batAnimation;
+
+    // ─── Gekko Settings ───────────────────────────────────────────────────────
+
     [Header("Gekko")]
     public Transform gekkoMesh;
     public float gekkoMoveSpeed = 0.5f;
@@ -117,6 +141,9 @@ public class PlayerController : MonoBehaviour
         playerMap.FindAction("CatMode").performed += OnCat;
         playerMap.FindAction("BatMode").performed += OnBat;
         playerMap.FindAction("GekkoMode").performed += OnGekko;
+
+        cc = GetComponent<CharacterController>();
+        cc.enabled = false;
     }
 
     void OnEnable() => actions.FindActionMap("Player").Enable();
@@ -128,6 +155,9 @@ public class PlayerController : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
 
         EnterForm(Form.Rat); // default form
+        ratMesh.SetActive(true);
+        catMesh.SetActive(false);
+        batMesh.SetActive(false);
 
         virtualCamera = FindAnyObjectByType<CinemachineCamera>();
         virtualCamera.Follow = cameraPivot;
@@ -174,27 +204,50 @@ public class PlayerController : MonoBehaviour
                 rb.freezeRotation = true;
                 myNormal = myTransform.up;
                 distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
+
+                //crosshair.sprite
+                // gameobject.setActive()
                 break;
             case Form.Cat:
-                rb.useGravity = false;
+                rb.isKinematic = true;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
                 myNormal = Vector3.up;
+                cc.enabled = true;
+                cc.radius = 0.5f;
+                cc.height = 2f;
+                catVerticalVelocity = 0f;
+
+                // mesh & animation
+                catMesh.SetActive(true);
+                crosshair.sprite = catCrosshair;
                 break;
+
             case Form.Bat:
                 rb.useGravity = false;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
                 batIsFlying = false;
+
+                // mesh & animation
+                batMesh.SetActive(true);
+                crosshair.sprite = batCrosshair;
                 break;
+
             case Form.Rat:
-                rb.useGravity = false;
+                rb.isKinematic = true;
                 rb.freezeRotation = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
                 myNormal = Vector3.up;
-                //boxCollider.size = new Vector3(0.4f, 0.4f, 0.4f);
-                distGround = boxCollider.bounds.extents.y - boxCollider.center.y;
+                cc.enabled = true;
+                cc.radius = 0.2f;  // smaller — can squeeze through gaps or something HAHAHAHAHAH
+                cc.height = 0.8f;
                 ratVerticalVelocity = 0f;
+                distGround = cc.height / 2f;
+
+                // mesh & animation
+                ratMesh.SetActive(true);
+                crosshair.sprite = ratCrosshair;
                 break;
         }
         Debug.Log($"Entered form: {currentForm}");
@@ -202,6 +255,12 @@ public class PlayerController : MonoBehaviour
 
     private void ExitCurrentForm()
     {
+        // Reset shared state
+        coyoteCounter = 0f;
+        jumpBufferCounter = 0f;
+        jumpPressedThisUpdate = false;
+        isGrounded = false;
+
         switch (currentForm)
         {
             case Form.Gekko:
@@ -211,16 +270,26 @@ public class PlayerController : MonoBehaviour
                     rb.isKinematic = false;
                     jumping = false;
                 }
+                gekkoVerticalVelocity = 0f;
                 rb.freezeRotation = false;
                 break;
             case Form.Cat:
+                catVerticalVelocity = 0f;
+                cc.enabled = false;
+                rb.isKinematic = false;
+                catMesh.SetActive(false);
                 break;
             case Form.Bat:
+                batVerticalVelocity = 0f;
                 rb.useGravity = false;
+                batMesh.SetActive(false);
                 break;
             case Form.Rat:
-                // Restore collider to default size when leaving rat form
-                boxCollider.size = new Vector3(1f, 1f, 1f); // match your default collider size
+                cc.enabled = false;
+                rb.isKinematic = false;
+                ratVerticalVelocity = 0f;
+                boxCollider.size = new Vector3(1f, 1f, 1f);
+                ratMesh.SetActive(false);
                 break;
         }
     }
@@ -234,8 +303,8 @@ public class PlayerController : MonoBehaviour
     {
         Vector2 rawLookInput = look.ReadValue<Vector2>();
 
-        float yawDelta = rawLookInput.x * lookSensitivity;
-        currentPitch -= rawLookInput.y * lookSensitivity;
+        float yawDelta = rawLookInput.x * lookSensitivity * Time.deltaTime;
+        currentPitch -= rawLookInput.y * lookSensitivity * Time.deltaTime;
 
         float pitchMin = (currentForm == Form.Bat) ? -90f : -50f;
         float pitchMax = (currentForm == Form.Bat) ? 90f : 50f;
@@ -243,7 +312,11 @@ public class PlayerController : MonoBehaviour
 
         Vector3 yawAxis = (currentForm == Form.Gekko) ? myNormal : Vector3.up;
         Quaternion yawDeltaQ = Quaternion.AngleAxis(yawDelta, yawAxis);
-        rb.MoveRotation(rb.rotation * yawDeltaQ);
+
+        if (cc.enabled)
+            myTransform.rotation = myTransform.rotation * yawDeltaQ;
+        else
+            rb.MoveRotation(rb.rotation * yawDeltaQ);
 
         cameraPivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
     }
@@ -372,59 +445,9 @@ public class PlayerController : MonoBehaviour
 
     private void RatMove()
     {
-        isGrounded = Physics.Raycast(myTransform.position, Vector3.down, distGround + deltaGround);
-
-        // Coyote time
-        if (isGrounded)
-            coyoteCounter = coyoteTime;
-        else
-            coyoteCounter -= Time.deltaTime;
-
-        //Jump buffer
-        if (jumpPressedThisUpdate)
-        {
-            jumpBufferCounter = jumpBufferTime;
-            jumpPressedThisUpdate = false;
-        }
-        else
-            jumpBufferCounter -= Time.deltaTime;
-
-        //Manual gravity
-        if (!isGrounded)
-            ratVerticalVelocity -= 9.8f * Time.deltaTime;
-
-        //Jump
-        if (jumpBufferCounter > 0f && coyoteCounter > 0f)
-        {
-            ratVerticalVelocity = ratJumpForce;
-            jumpBufferCounter = 0f;
-            coyoteCounter = 0f;
-        }
-
-        // Landing — fall damage then stop vertical movement
-        if (isGrounded && ratVerticalVelocity < 0f)
-        {
-            if (ratVerticalVelocity >= -1f)
-                ratVerticalVelocity = 0f;
-                
-        }
-
-        Vector3 moveDir = myTransform.right * moveVector.x
-                             + myTransform.forward * moveVector.y;
-        Vector3 displacement = (moveDir * ratMoveSpeed + Vector3.up * ratVerticalVelocity)
-                     * Time.deltaTime;
-
-        rb.MovePosition(rb.position + displacement);
-    }
-
-    #endregion
-
-    // ─────────────────────────────────────────────────────────────────────────
-    #region Cat Movement
-
-    private void CatMove()
-    {
-        isGrounded = Physics.Raycast(myTransform.position, Vector3.down, distGround + deltaGround);
+        ratAnimation.SetBool("isMoving", moveVector.magnitude > 0.1f);
+        
+        isGrounded = cc.isGrounded;
 
         // Coyote time
         if (isGrounded)
@@ -441,7 +464,57 @@ public class PlayerController : MonoBehaviour
         else
             jumpBufferCounter -= Time.deltaTime;
 
-        // Manual gravity
+        // Gravity
+        if (!isGrounded)
+            ratVerticalVelocity -= 9.8f * Time.deltaTime;
+
+        // Jump
+        if (jumpBufferCounter > 0f && coyoteCounter > 0f)
+        {
+            ratVerticalVelocity = ratJumpForce;
+            jumpBufferCounter = 0f;
+            coyoteCounter = 0f;
+        }
+
+        // Landing
+        if (isGrounded && ratVerticalVelocity < 0f)
+            ratVerticalVelocity = 0f;
+
+        Vector3 moveDir = myTransform.right * moveVector.x
+                             + myTransform.forward * moveVector.y;
+        Vector3 displacement = (moveDir * ratMoveSpeed + Vector3.up * ratVerticalVelocity)
+                             * Time.deltaTime;
+
+        cc.Move(displacement);
+    }
+
+    #endregion
+
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Cat Movement
+
+    private void CatMove()
+    {
+        catAnimation.SetBool("isMoving", moveVector.magnitude > 0.1f);
+
+        isGrounded = cc.isGrounded;
+
+        // Coyote time
+        if (isGrounded)
+            coyoteCounter = coyoteTime;
+        else
+            coyoteCounter -= Time.deltaTime;
+
+        // Jump buffer
+        if (jumpPressedThisUpdate)
+        {
+            jumpBufferCounter = jumpBufferTime;
+            jumpPressedThisUpdate = false;
+        }
+        else
+            jumpBufferCounter -= Time.deltaTime;
+
+        // Gravity
         if (!isGrounded)
             catVerticalVelocity -= 9.8f * Time.deltaTime;
 
@@ -453,7 +526,7 @@ public class PlayerController : MonoBehaviour
             coyoteCounter = 0f;
         }
 
-        // Landing — fall damage then stop vertical movement
+        // Landing
         if (isGrounded && catVerticalVelocity < 0f)
         {
             if (catVerticalVelocity < -1f)
@@ -467,7 +540,7 @@ public class PlayerController : MonoBehaviour
         Vector3 displacement = (moveDir * catMoveSpeed + Vector3.up * catVerticalVelocity)
                              * Time.deltaTime;
 
-        rb.MovePosition(rb.position + displacement);
+        cc.Move(displacement);
     }
 
     #endregion
@@ -478,6 +551,8 @@ public class PlayerController : MonoBehaviour
 
     private void BatMove()
     {
+        
+
         // Horizontal movement
         Vector3 horizontalMove = (myTransform.right * moveVector.x
                                 + myTransform.forward * moveVector.y) * batMoveSpeed;
@@ -527,8 +602,13 @@ public class PlayerController : MonoBehaviour
             // Align bat to surface
             float t = lerpSpeed * Time.fixedDeltaTime;
             Vector3 batFwd = Vector3.Cross(myTransform.right, surfaceNormal);
+            batAnimation.SetBool("isMoving", false);
             //Quaternion targetRot = Quaternion.LookRotation(batFwd, surfaceNormal);
             //myTransform.rotation = Quaternion.Lerp(myTransform.rotation, targetRot, t);
+        }
+        else
+        {
+            batAnimation.SetBool("isMoving", true);
         }
     }
 
