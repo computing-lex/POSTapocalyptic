@@ -12,8 +12,11 @@ public class Terminal : MonoBehaviour
     [SerializeField] private float minFontSize = 12;
     [SerializeField] private float maxFontSize = 200;
     [SerializeField] private TMP_Text prompt;
+    [SerializeField] private float timeToDeliver;
 
     private float playerDistance = 100;
+    public bool isActive = false;
+
 
     void Start()
     {
@@ -24,24 +27,22 @@ public class Terminal : MonoBehaviour
     {
         playerDistance = Vector3.Distance(transform.position, PlayerController.Instance.transform.position);
 
-        if (interact.IsPressed() && playerDistance < interactDistance)
+        if (interact.IsPressed() && playerDistance < interactDistance && isActive)
         {
             GameManager.Instance.OnDelivery();
+            Debug.Log("Deposited!");
         }
 
-        if (playerDistance > maxViewDistance)
-        {
-            prompt.text = "!";
-        }
-        else if (playerDistance > interactDistance)
-        {
-            prompt.text = playerDistance.ToString("F1") + " m";
-        }
-        else
-        {
-            prompt.text = "Deposit Data\n[E]";
-        }
+        if (isActive) SetText();
+        else prompt.text = "";
+    }
 
+    private void SetText()
+    {
+        if (playerDistance > maxViewDistance) prompt.text = "!";
+        else if (playerDistance > interactDistance) prompt.text = playerDistance.ToString("F1") + " m";
+        else prompt.text = "Deposit Data\n[E]";
+    
         /*  FONT SCALING
         At 100 m away, the player is at the max distance, so the font should
         be at its max size. When at 10 or closer, the font is at minimum.
@@ -49,10 +50,7 @@ public class Terminal : MonoBehaviour
         over 100 units. Distance is alrerady stored in playerDistance 
         */
 
-        if (playerDistance < viewDistance)
-        {
-            prompt.fontSize = minFontSize;
-        }
+        if (playerDistance < viewDistance) prompt.fontSize = minFontSize;
         else if (playerDistance < maxViewDistance)
         {
             /* if view < playerDistance < max
@@ -61,10 +59,7 @@ public class Terminal : MonoBehaviour
                wow math */
             prompt.fontSize = Mathf.Lerp(minFontSize, maxFontSize, (playerDistance - viewDistance)/(maxViewDistance-viewDistance));
         }
-        else
-        {
-            prompt.fontSize = maxFontSize;
-        }
+        else prompt.fontSize = maxFontSize;
     }
 
 
